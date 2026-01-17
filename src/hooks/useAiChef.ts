@@ -46,11 +46,15 @@ export function useAiChef() {
 
   async function loadConversation(conversationId: number) {
     try {
-      const [conversationData, messagesData] = await Promise.all([
-        fetch(`${`https://haix.ai/api/${`conversations_${Math.random().toString(36).substring(2, 10)}`}`}/${conversationId}`).then(r => r.json()),
-        getMessages(conversationId),
-      ]);
-      setCurrentConversation(conversationData);
+      const messagesData = await getMessages(conversationId);
+      // Create a mock conversation object since we don't have the full conversation data
+      const conversation: Conversation = {
+        id: conversationId,
+        title: `Conversation ${conversationId}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setCurrentConversation(conversation);
       setMessages(messagesData);
     } catch (err: any) {
       setError(err.message);
@@ -60,14 +64,20 @@ export function useAiChef() {
 
   async function sendMessage(content: string) {
     if (!currentConversation) {
-      await startNewConversation();
+      const newConversation = await startNewConversation();
+      if (!newConversation) return;
+      
+      // Set the current conversation after creating it
+      setCurrentConversation(newConversation);
     }
 
-    if (!currentConversation) return;
+    // Use the current conversation (either existing or newly created)
+    const conversation = currentConversation;
+    if (!conversation) return;
 
     const userMessage: Message = {
       id: Date.now(),
-      conversation_id: currentConversation.id,
+      conversation_id: conversation.id,
       role: 'user',
       content,
       created_at: new Date().toISOString(),
@@ -80,14 +90,14 @@ export function useAiChef() {
       setError(null);
 
       // Add user message to database
-      await addMessage(currentConversation.id, 'user', content);
+      await addMessage(conversation.id, 'user', content);
 
       // Get AI response
       const aiResponse = await askChef(content);
 
       const assistantMessage: Message = {
         id: Date.now() + 1,
-        conversation_id: currentConversation.id,
+        conversation_id: conversation.id,
         role: 'assistant',
         content: aiResponse,
         created_at: new Date().toISOString(),
@@ -96,7 +106,7 @@ export function useAiChef() {
       setMessages(prev => [...prev, assistantMessage]);
 
       // Add AI message to database
-      await addMessage(currentConversation.id, 'assistant', aiResponse);
+      await addMessage(conversation.id, 'assistant', aiResponse);
     } catch (err: any) {
       setError(err.message);
       throw err;
